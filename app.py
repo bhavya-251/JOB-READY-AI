@@ -243,7 +243,7 @@ def home():
 
         <div class="container">
 
-            <h1>🎤 AI Interview Coach</h1>
+            <h1> AI Interview Coach</h1>
 
             <p class="subtitle">
                 Practice interviews and become job ready.
@@ -299,7 +299,7 @@ def home():
                 ></textarea>
 
                 <button type="submit">
-                    Start Interview 🚀
+                    Start Mock Interview 
                 </button>
 
             </form>
@@ -403,7 +403,7 @@ def interview(
 
         <div class="container">
 
-            <h1>🎤 Interview Coach</h1>
+            <h1> Interview Coach</h1>
 
             <div class="response">
 {response}
