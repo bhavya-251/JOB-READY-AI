@@ -1,5 +1,3 @@
-%%writefile app.py
-
 import os
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
