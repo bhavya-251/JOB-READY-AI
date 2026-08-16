@@ -1,435 +1,592 @@
 import os
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse
+
+from flask import Flask, request, jsonify, render_template_string
+
 from langchain.agents import create_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.tools import tool
-
-app = FastAPI()
-
-
-# =========================
-# TOOLS
-# =========================
-
-@tool
-def generate_interview_questions(role: str, skills: str, interview_type: str) -> str:
-    """Generate interview questions based on the candidate's role, skills and interview type."""
-
-    return f"""
-    Generate suitable {interview_type} interview questions for a
-    {role} candidate with the following skills:
-
-    {skills}
-
-    Include questions that test:
-    - Core knowledge
-    - Practical understanding
-    - Problem solving
-    - Real-world situations
-    """
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-@tool
-def evaluate_answer(answer: str) -> str:
-    """Evaluate a candidate's interview answer."""
-
-    return f"""
-    Evaluate the following interview answer:
-
-    {answer}
-
-    Give:
-    - Score out of 10
-    - Strengths
-    - Weaknesses
-    - What is missing
-    - How the answer can be improved
-    """
+app = Flask(__name__)
 
 
-# =========================
-# GEMINI MODEL
-# =========================
+# ============================================================
+# GOOGLE GEMINI MODEL
+# ============================================================
 
-model = ChatGoogleGenerativeAI(
+llm = ChatGoogleGenerativeAI(
     model="gemini-3.6-flash",
-    google_api_key=os.getenv("GOOGLE_API_KEY")
+    temperature=0.4,
+    max_tokens=2000,
+    max_retries=2
 )
 
 
-# =========================
-# LANGCHAIN AGENT
-# =========================
+# ============================================================
+# JOB ROLE REQUIREMENTS TOOL
+# ============================================================
 
-system_prompt = """
-You are an AI Interview Coach called InterviewPro.
+@tool
+def get_job_role_requirements(role: str) -> str:
+    """
+    Provides important skills and interview areas
+    for the selected job role.
+    """
 
-You are a JOB READY AI AGENT designed to help students and
-job seekers prepare for interviews.
+    roles = {
+        "software engineer": """
+        Skills:
+        - Programming
+        - Data Structures and Algorithms
+        - Object-Oriented Programming
+        - SQL and Databases
+        - Git and GitHub
+        - Problem Solving
+        - Basic System Design
+        - Communication
+        """,
 
-Your responsibilities are:
+        "web developer": """
+        Skills:
+        - HTML
+        - CSS
+        - JavaScript
+        - React
+        - REST APIs
+        - Databases
+        - Git and GitHub
+        - Debugging
+        """,
 
-1. Generate technical interview questions.
-2. Generate HR interview questions.
-3. Generate behavioral questions.
-4. Conduct mock interviews.
-5. Evaluate candidate answers.
-6. Give scores out of 10.
-7. Identify strengths and weaknesses.
-8. Suggest improved answers.
-9. Recommend topics that the candidate should prepare.
-10. Provide a final interview performance report.
+        "data scientist": """
+        Skills:
+        - Python
+        - Statistics
+        - Machine Learning
+        - Pandas
+        - NumPy
+        - SQL
+        - Data Visualization
+        - Problem Solving
+        """,
 
-Rules:
+        "devops engineer": """
+        Skills:
+        - Linux
+        - Git
+        - CI/CD
+        - Docker
+        - Kubernetes
+        - Cloud
+        - Networking
+        - Monitoring
+        - Automation
+        """,
 
-- Ask ONE question at a time during a mock interview.
-- Do not give the answer before the candidate responds.
-- After the candidate answers, evaluate the answer.
-- Give constructive and realistic feedback.
-- For technical questions, check conceptual correctness.
-- For behavioral questions, check clarity, relevance and structure.
-- Use the STAR method when appropriate.
+        "ai engineer": """
+        Skills:
+        - Python
+        - Machine Learning
+        - Deep Learning
+        - LLMs
+        - LangChain
+        - RAG
+        - APIs
+        - Vector Databases
+        - Prompt Engineering
+        """
+    }
 
-When the user asks to start an interview:
-Ask the first appropriate question based on their job role,
-experience and skills.
+    role = role.lower().strip()
 
-When evaluating an answer, provide:
+    for job_role, skills in roles.items():
+        if job_role in role:
+            return skills
 
-Score: X/10
+    return """
+    General interview areas:
+    - Technical knowledge
+    - Problem solving
+    - Projects
+    - Communication
+    - Behavioral questions
+    - Role-specific knowledge
+    """
+
+
+# ============================================================
+# AGENT INSTRUCTIONS
+# ============================================================
+
+SYSTEM_PROMPT = """
+You are JobReady AI, a professional job interview agent.
+
+Your job is to conduct a realistic mock interview and evaluate
+the candidate.
+
+INTERVIEW PROCESS:
+
+1. At the beginning, ask the candidate for their name.
+
+2. Ask which job role they want to practice for.
+
+3. After the job role is provided, use the
+   get_job_role_requirements tool.
+
+4. Conduct exactly 7 interview questions.
+
+5. Ask ONLY ONE question at a time.
+
+6. Wait for the candidate's answer before asking the next
+   question.
+
+7. Do not ask two questions in the same message.
+
+8. The 7 questions should cover different areas:
+
+   Question 1:
+   Introduction or background.
+
+   Question 2:
+   Technical knowledge.
+
+   Question 3:
+   Problem solving.
+
+   Question 4:
+   Project experience.
+
+   Question 5:
+   Role-specific technical knowledge.
+
+   Question 6:
+   Behavioral or situational question.
+
+   Question 7:
+   A challenging technical or practical question.
+
+9. After every answer, briefly tell the candidate what was
+   good and what could be improved.
+
+10. Then ask the next question.
+
+11. Do not give the final score until all 7 questions have
+    been answered.
+
+12. After Question 7 has been answered, do not ask another
+    question.
+
+13. Instead, provide the final interview report.
+
+FINAL REPORT:
+
+INTERVIEW COMPLETE
+
+Overall Score: X/10
+
+Technical Knowledge: X/10
+
+Problem Solving: X/10
+
+Communication: X/10
+
+Confidence: X/10
 
 Strengths:
-...
+- Give 3 specific strengths.
 
 Weaknesses:
-...
+- Give 3 specific weaknesses.
 
-What is missing:
-...
+How to Improve:
+- Give 3 practical suggestions.
 
-How to improve:
-...
+Final Feedback:
+Give a short overall assessment of the candidate.
 
-When asked for a final report, provide:
+IMPORTANT RULES:
 
-Overall Score
-Technical Skills
-Communication
-Problem Solving
-Strengths
-Weaknesses
-Recommended Preparation Topics
-Final Advice
+- Ask one question at a time.
+- Do not skip questions.
+- Do not give the final rating early.
+- Do not invent information about the candidate.
+- Base the evaluation only on their answers.
+- Keep the interview professional.
+- Do not use emojis.
+- Do not use decorative symbols.
+- Use plain professional text.
 """
 
 
+# ============================================================
+# LANGCHAIN AGENT
+# ============================================================
+
 agent = create_agent(
-    model=model,
-    tools=[
-        generate_interview_questions,
-        evaluate_answer
-    ],
-    system_prompt=system_prompt
+    model=llm,
+    tools=[get_job_role_requirements],
+    system_prompt=SYSTEM_PROMPT,
+    name="job_ready_agent"
 )
 
 
-# =========================
-# RUN AGENT
-# =========================
+# ============================================================
+# WEBSITE
+# ============================================================
 
-def run_agent(prompt):
+HTML = """
+<!DOCTYPE html>
+<html>
 
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
+<head>
+
+    <title>JobReady AI</title>
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <style>
+
+        * {
+            box-sizing: border-box;
         }
-    )
 
-    return result["messages"][-1].content
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+        }
+
+        .container {
+            max-width: 850px;
+            margin: 30px auto;
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.08);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 25px;
+        }
+
+        #chat {
+            height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 15px;
+            background: #fafafa;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 12px 15px;
+            border-radius: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            background: #e8f0fe;
+            text-align: right;
+        }
+
+        .bot {
+            background: #eeeeee;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        input {
+            flex: 1;
+            padding: 14px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 14px 20px;
+            border: none;
+            border-radius: 10px;
+            background: #111827;
+            color: white;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .start {
+            display: block;
+            margin: 0 auto 20px auto;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>JobReady AI</h1>
+
+    <div class="subtitle">
+        LangChain Powered Interview Agent
+    </div>
+
+    <button class="start" onclick="startInterview()">
+        Start Interview
+    </button>
+
+    <div id="chat"></div>
+
+    <div class="input-area">
+
+        <input
+            id="message"
+            type="text"
+            placeholder="Type your answer..."
+            onkeydown="handleEnter(event)"
+        >
+
+        <button onclick="sendMessage()">
+            Send
+        </button>
+
+    </div>
+
+</div>
 
 
-# =========================
-# HOME PAGE
-# =========================
+<script>
 
-@app.get("/", response_class=HTMLResponse)
+let conversation = [];
+
+
+function addMessage(text, sender) {
+
+    const chat = document.getElementById("chat");
+
+    const message = document.createElement("div");
+
+    message.className = "message " + sender;
+
+    message.textContent = text;
+
+    chat.appendChild(message);
+
+    chat.scrollTop = chat.scrollHeight;
+}
+
+
+async function startInterview() {
+
+    conversation = [];
+
+    document.getElementById("chat").innerHTML = "";
+
+    const startMessage =
+        "Start the interview. Ask me for my name and then my job role.";
+
+    const response = await fetch("/chat", {
+
+        method: "POST",
+
+        headers: {
+            "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+            message: startMessage,
+            history: []
+        })
+
+    });
+
+    const data = await response.json();
+
+    addMessage(data.response, "bot");
+
+    conversation.push({
+        role: "user",
+        content: startMessage
+    });
+
+    conversation.push({
+        role: "assistant",
+        content: data.response
+    });
+}
+
+
+async function sendMessage() {
+
+    const input = document.getElementById("message");
+
+    const message = input.value.trim();
+
+    if (!message) {
+        return;
+    }
+
+    addMessage(message, "user");
+
+    input.value = "";
+
+    conversation.push({
+        role: "user",
+        content: message
+    });
+
+
+    try {
+
+        const response = await fetch("/chat", {
+
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({
+                message: message,
+                history: conversation
+            })
+
+        });
+
+
+        const data = await response.json();
+
+        addMessage(data.response, "bot");
+
+        conversation.push({
+            role: "assistant",
+            content: data.response
+        });
+
+    } catch (error) {
+
+        addMessage(
+            "Unable to connect to the server. Please try again.",
+            "bot"
+        );
+
+    }
+}
+
+
+function handleEnter(event) {
+
+    if (event.key === "Enter") {
+        sendMessage();
+    }
+
+}
+
+</script>
+
+</body>
+
+</html>
+"""
+
+
+# ============================================================
+# HOME ROUTE
+# ============================================================
+
+@app.route("/")
 def home():
+    return render_template_string(HTML)
 
-    return """
-    <!DOCTYPE html>
 
-    <html>
-
-    <head>
-
-        <title>AI Interview Coach</title>
-
-        <style>
+# ============================================================
+# CHAT ROUTE
+# ============================================================
 
-            body {
-                font-family: Arial, sans-serif;
-                background: #f3f4f6;
-                margin: 0;
-                padding: 40px;
-            }
-
-            .container {
-                max-width: 850px;
-                margin: auto;
-                background: white;
-                padding: 35px;
-                border-radius: 15px;
-                box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-            }
+@app.route("/chat", methods=["POST"])
+def chat():
 
-            h1 {
-                text-align: center;
-            }
+    try:
 
-            .subtitle {
-                text-align: center;
-                color: #666;
-                margin-bottom: 30px;
-            }
+        data = request.get_json()
 
-            label {
-                display: block;
-                margin-top: 18px;
-                font-weight: bold;
-            }
+        message = data.get("message", "").strip()
 
-            input, select, textarea {
-                width: 100%;
-                padding: 12px;
-                margin-top: 7px;
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                box-sizing: border-box;
-                font-size: 15px;
-            }
+        history = data.get("history", [])
 
-            textarea {
-                height: 120px;
-            }
+        if not message:
 
-            button {
-                width: 100%;
-                margin-top: 25px;
-                padding: 14px;
-                border: none;
-                border-radius: 8px;
-                background: #111827;
-                color: white;
-                font-size: 16px;
-                cursor: pointer;
-            }
+            return jsonify({
+                "response": "Please enter a message."
+            })
 
-            button:hover {
-                background: #374151;
-            }
 
-        </style>
+        messages = history.copy()
 
-    </head>
+        if (
+            not messages
+            or messages[-1].get("content") != message
+        ):
 
-    <body>
+            messages.append({
+                "role": "user",
+                "content": message
+            })
 
-        <div class="container">
 
-            <h1> AI Interview Coach</h1>
+        result = agent.invoke({
+            "messages": messages
+        })
 
-            <p class="subtitle">
-                Practice interviews and become job ready.
-            </p>
 
-            <form action="/interview" method="post">
+        final_message = result["messages"][-1]
 
-                <label>Job Role</label>
+        response_text = final_message.content
 
-                <input
-                    type="text"
-                    name="role"
-                    placeholder="Example: Python Developer"
-                    required
-                >
+        return jsonify({
+            "response": response_text
+        })
 
-                <label>Experience Level</label>
 
-                <select name="experience">
+    except Exception as e:
 
-                    <option>Fresher</option>
-                    <option>0-1 Years</option>
-                    <option>1-3 Years</option>
-                    <option>3+ Years</option>
+        print("ERROR:", str(e))
 
-                </select>
+        return jsonify({
+            "response":
+                "Something went wrong. Please try again."
+        }), 500
 
-                <label>Skills</label>
 
-                <input
-                    type="text"
-                    name="skills"
-                    placeholder="Example: Python, SQL, FastAPI"
-                    required
-                >
-
-                <label>Interview Type</label>
-
-                <select name="interview_type">
-
-                    <option>Technical</option>
-                    <option>HR</option>
-                    <option>Technical + HR</option>
-                    <option>Behavioral</option>
-
-                </select>
-
-                <label>What do you want to do?</label>
-
-                <textarea
-                    name="request"
-                    placeholder="Example: Start my mock interview and ask me questions one by one."
-                ></textarea>
-
-                <button type="submit">
-                    Start Mock Interview 
-                </button>
-
-            </form>
-
-        </div>
-
-    </body>
-
-    </html>
-    """
-
-
-# =========================
-# INTERVIEW
-# =========================
-
-@app.post("/interview", response_class=HTMLResponse)
-def interview(
-    role: str = Form(...),
-    experience: str = Form(...),
-    skills: str = Form(...),
-    interview_type: str = Form(...),
-    request: str = Form("")
-):
-
-    prompt = f"""
-    Candidate Details:
-
-    Job Role: {role}
-    Experience: {experience}
-    Skills: {skills}
-    Interview Type: {interview_type}
-
-    Candidate Request:
-    {request}
-
-    Act as the AI Interview Coach.
-
-    If the candidate wants to start a mock interview,
-    ask the first suitable question.
-
-    If the candidate wants interview preparation,
-    provide a preparation plan.
-
-    If the candidate provides an interview answer,
-    evaluate the answer and provide feedback.
-    """
-
-    response = run_agent(prompt)
-
-    return f"""
-    <!DOCTYPE html>
-
-    <html>
-
-    <head>
-
-        <title>Interview Result</title>
-
-        <style>
-
-            body {{
-                font-family: Arial, sans-serif;
-                background: #f3f4f6;
-                padding: 40px;
-            }}
-
-            .container {{
-                max-width: 850px;
-                margin: auto;
-                background: white;
-                padding: 35px;
-                border-radius: 15px;
-                box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-            }}
-
-            .response {{
-                background: #f9fafb;
-                padding: 25px;
-                border-radius: 10px;
-                white-space: pre-wrap;
-                line-height: 1.7;
-            }}
-
-            a {{
-                display: block;
-                margin-top: 25px;
-                text-align: center;
-                text-decoration: none;
-                background: #111827;
-                color: white;
-                padding: 13px;
-                border-radius: 8px;
-            }}
-
-        </style>
-
-    </head>
-
-    <body>
-
-        <div class="container">
-
-            <h1> Interview Coach</h1>
-
-            <div class="response">
-{response}
-            </div>
-
-            <a href="/">
-                ← Start Another Interview
-            </a>
-
-        </div>
-
-    </body>
-
-    </html>
-    """
-
-
-# =========================
-# RENDER
-# =========================
+# ============================================================
+# START SERVER
+# ============================================================
 
 if __name__ == "__main__":
 
-    import uvicorn
+    port = int(os.environ.get("PORT", 5000))
 
-    uvicorn.run(
-        app,
+    app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000))
+        port=port,
+        debug=False
     )
