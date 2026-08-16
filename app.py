@@ -9,7 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 # ============================================================
-# FASTAPI APP
+# FASTAPI APPLICATION
 # ============================================================
 
 app = FastAPI()
@@ -119,7 +119,7 @@ General interview areas:
 
 
 # ============================================================
-# AGENT INSTRUCTIONS
+# AGENT SYSTEM PROMPT
 # ============================================================
 
 SYSTEM_PROMPT = """
@@ -132,22 +132,23 @@ INTERVIEW PROCESS:
 
 1. At the beginning, ask the candidate for their name.
 
-2. Then ask which job role they want to practice for.
+2. After receiving the name, ask which job role they want
+   to practice for.
 
 3. Once the candidate provides the job role, use the
    get_job_role_requirements tool.
 
-4. Conduct exactly 7 interview questions after the
-   candidate's name and role are known.
+4. Conduct exactly 7 interview questions after the name
+   and job role are known.
 
 5. Ask ONLY ONE question at a time.
 
-6. Wait for the candidate's answer before asking the next
-   question.
+6. Wait for the candidate's answer before asking the
+   next question.
 
 7. Never ask multiple questions in one message.
 
-8. The 7 questions should cover different areas:
+8. The 7 questions should cover different areas.
 
 Question 1:
 Introduction or background.
@@ -184,7 +185,7 @@ have been answered.
 
 12. Give the final interview report.
 
-FINAL REPORT FORMAT:
+FINAL REPORT:
 
 INTERVIEW COMPLETE
 
@@ -298,6 +299,7 @@ HTML = """
             border-radius: 12px;
             line-height: 1.5;
             white-space: pre-wrap;
+            word-wrap: break-word;
         }
 
         .user {
@@ -538,6 +540,39 @@ async def home():
 
 
 # ============================================================
+# EXTRACT TEXT FROM GEMINI RESPONSE
+# ============================================================
+
+def extract_response_text(content):
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+
+        text_parts = []
+
+        for item in content:
+
+            if isinstance(item, dict):
+
+                if item.get("type") == "text":
+
+                    text = item.get("text", "")
+
+                    if text:
+                        text_parts.append(text)
+
+            elif isinstance(item, str):
+
+                text_parts.append(item)
+
+        return "\n".join(text_parts)
+
+    return str(content)
+
+
+# ============================================================
 # CHAT ENDPOINT
 # ============================================================
 
@@ -554,58 +589,48 @@ async def chat(request: Request):
 
         if not message:
 
-            return JSONResponse({
-                "response": "Please enter a message."
-            })
+            return JSONResponse(
+                {
+                    "response": "Please enter a message."
+                }
+            )
 
 
         messages = history.copy()
+
 
         if (
             not messages
             or messages[-1].get("content") != message
         ):
 
-            messages.append({
-                "role": "user",
-                "content": message
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": message
+                }
+            )
 
 
-        result = agent.invoke({
-            "messages": messages
-        })
+        result = agent.invoke(
+            {
+                "messages": messages
+            }
+        )
 
 
         final_message = result["messages"][-1]
 
-        response_text = final_message.content
-
-if isinstance(response_text, list):
-
-    text_parts = []
-
-    for item in response_text:
-
-        if isinstance(item, dict):
-
-            if item.get("type") == "text":
-                text_parts.append(item.get("text", ""))
-
-        elif isinstance(item, str):
-
-            text_parts.append(item)
-
-    response_text = "\n".join(text_parts)
-
-elif not isinstance(response_text, str):
-
-    response_text = str(response_text)
+        response_text = extract_response_text(
+            final_message.content
+        )
 
 
-        return JSONResponse({
-            "response": response_text
-        })
+        return JSONResponse(
+            {
+                "response": response_text
+            }
+        )
 
 
     except Exception as e:
