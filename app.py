@@ -581,18 +581,26 @@ async def chat(request: Request):
 
         response_text = final_message.content
 
-        if not isinstance(response_text, str):
+if isinstance(response_text, list):
 
-            if isinstance(response_text, list):
+    text_parts = []
 
-                response_text = " ".join(
-                    str(item)
-                    for item in response_text
-                )
+    for item in response_text:
 
-            else:
+        if isinstance(item, dict):
 
-                response_text = str(response_text)
+            if item.get("type") == "text":
+                text_parts.append(item.get("text", ""))
+
+        elif isinstance(item, str):
+
+            text_parts.append(item)
+
+    response_text = "\n".join(text_parts)
+
+elif not isinstance(response_text, str):
+
+    response_text = str(response_text)
 
 
         return JSONResponse({
