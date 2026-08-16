@@ -1,13 +1,18 @@
 import os
 
-from flask import Flask, request, jsonify, render_template_string
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-app = Flask(__name__)
+# ============================================================
+# FASTAPI APP
+# ============================================================
+
+app = FastAPI()
 
 
 # ============================================================
@@ -15,7 +20,7 @@ app = Flask(__name__)
 # ============================================================
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
+    model="gemini-2.5-flash",
     temperature=0.4,
     max_tokens=2000,
     max_retries=2
@@ -30,88 +35,88 @@ llm = ChatGoogleGenerativeAI(
 def get_job_role_requirements(role: str) -> str:
     """
     Provides important skills and interview areas
-    for the selected job role.
+    for a selected job role.
     """
 
     roles = {
         "software engineer": """
-        Skills:
-        - Programming
-        - Data Structures and Algorithms
-        - Object-Oriented Programming
-        - SQL and Databases
-        - Git and GitHub
-        - Problem Solving
-        - Basic System Design
-        - Communication
-        """,
+Skills:
+- Programming
+- Data Structures and Algorithms
+- Object-Oriented Programming
+- SQL and Databases
+- Git and GitHub
+- Problem Solving
+- Basic System Design
+- Communication
+""",
 
         "web developer": """
-        Skills:
-        - HTML
-        - CSS
-        - JavaScript
-        - React
-        - REST APIs
-        - Databases
-        - Git and GitHub
-        - Debugging
-        """,
+Skills:
+- HTML
+- CSS
+- JavaScript
+- React
+- REST APIs
+- Databases
+- Git and GitHub
+- Debugging
+""",
 
         "data scientist": """
-        Skills:
-        - Python
-        - Statistics
-        - Machine Learning
-        - Pandas
-        - NumPy
-        - SQL
-        - Data Visualization
-        - Problem Solving
-        """,
+Skills:
+- Python
+- Statistics
+- Machine Learning
+- Pandas
+- NumPy
+- SQL
+- Data Visualization
+- Problem Solving
+""",
 
         "devops engineer": """
-        Skills:
-        - Linux
-        - Git
-        - CI/CD
-        - Docker
-        - Kubernetes
-        - Cloud
-        - Networking
-        - Monitoring
-        - Automation
-        """,
+Skills:
+- Linux
+- Git
+- CI/CD
+- Docker
+- Kubernetes
+- Cloud
+- Networking
+- Monitoring
+- Automation
+""",
 
         "ai engineer": """
-        Skills:
-        - Python
-        - Machine Learning
-        - Deep Learning
-        - LLMs
-        - LangChain
-        - RAG
-        - APIs
-        - Vector Databases
-        - Prompt Engineering
-        """
+Skills:
+- Python
+- Machine Learning
+- Deep Learning
+- LLMs
+- LangChain
+- RAG
+- APIs
+- Vector Databases
+- Prompt Engineering
+"""
     }
 
-    role = role.lower().strip()
+    role_lower = role.lower().strip()
 
     for job_role, skills in roles.items():
-        if job_role in role:
+        if job_role in role_lower:
             return skills
 
     return """
-    General interview areas:
-    - Technical knowledge
-    - Problem solving
-    - Projects
-    - Communication
-    - Behavioral questions
-    - Role-specific knowledge
-    """
+General interview areas:
+- Technical knowledge
+- Problem solving
+- Projects
+- Communication
+- Behavioral questions
+- Role-specific knowledge
+"""
 
 
 # ============================================================
@@ -121,64 +126,66 @@ def get_job_role_requirements(role: str) -> str:
 SYSTEM_PROMPT = """
 You are JobReady AI, a professional job interview agent.
 
-Your job is to conduct a realistic mock interview and evaluate
-the candidate.
+Your purpose is to conduct a realistic mock interview and
+evaluate the candidate.
 
 INTERVIEW PROCESS:
 
 1. At the beginning, ask the candidate for their name.
 
-2. Ask which job role they want to practice for.
+2. Then ask which job role they want to practice for.
 
-3. After the job role is provided, use the
+3. Once the candidate provides the job role, use the
    get_job_role_requirements tool.
 
-4. Conduct exactly 7 interview questions.
+4. Conduct exactly 7 interview questions after the
+   candidate's name and role are known.
 
 5. Ask ONLY ONE question at a time.
 
 6. Wait for the candidate's answer before asking the next
    question.
 
-7. Do not ask two questions in the same message.
+7. Never ask multiple questions in one message.
 
 8. The 7 questions should cover different areas:
 
-   Question 1:
-   Introduction or background.
+Question 1:
+Introduction or background.
 
-   Question 2:
-   Technical knowledge.
+Question 2:
+Technical knowledge.
 
-   Question 3:
-   Problem solving.
+Question 3:
+Problem solving.
 
-   Question 4:
-   Project experience.
+Question 4:
+Project experience.
 
-   Question 5:
-   Role-specific technical knowledge.
+Question 5:
+Role-specific technical knowledge.
 
-   Question 6:
-   Behavioral or situational question.
+Question 6:
+Behavioral or situational question.
 
-   Question 7:
-   A challenging technical or practical question.
+Question 7:
+A challenging technical or practical question.
 
-9. After every answer, briefly tell the candidate what was
-   good and what could be improved.
+9. After every answer:
 
-10. Then ask the next question.
+- Briefly evaluate the answer.
+- Mention what was good.
+- Mention what could be improved.
+- Then ask the next question.
 
-11. Do not give the final score until all 7 questions have
-    been answered.
+10. Do not give the final score before all 7 questions
+have been answered.
 
-12. After Question 7 has been answered, do not ask another
-    question.
+11. After the seventh answer, do not ask another question.
 
-13. Instead, provide the final interview report.
+12. Give the final interview report.
 
-FINAL REPORT:
+FINAL REPORT FORMAT:
 
 INTERVIEW COMPLETE
 
@@ -209,8 +216,8 @@ IMPORTANT RULES:
 - Ask one question at a time.
 - Do not skip questions.
 - Do not give the final rating early.
+- Base the evaluation only on the candidate's answers.
 - Do not invent information about the candidate.
-- Base the evaluation only on their answers.
 - Keep the interview professional.
 - Do not use emojis.
 - Do not use decorative symbols.
@@ -340,6 +347,7 @@ HTML = """
 
 </head>
 
+
 <body>
 
 <div class="container">
@@ -402,36 +410,47 @@ async function startInterview() {
     document.getElementById("chat").innerHTML = "";
 
     const startMessage =
-        "Start the interview. Ask me for my name and then my job role.";
+        "Start the interview. Ask me for my name.";
 
-    const response = await fetch("/chat", {
+    try {
 
-        method: "POST",
+        const response = await fetch("/chat", {
 
-        headers: {
-            "Content-Type": "application/json"
-        },
+            method: "POST",
 
-        body: JSON.stringify({
-            message: startMessage,
-            history: []
-        })
+            headers: {
+                "Content-Type": "application/json"
+            },
 
-    });
+            body: JSON.stringify({
+                message: startMessage,
+                history: []
+            })
 
-    const data = await response.json();
+        });
 
-    addMessage(data.response, "bot");
+        const data = await response.json();
 
-    conversation.push({
-        role: "user",
-        content: startMessage
-    });
+        addMessage(data.response, "bot");
 
-    conversation.push({
-        role: "assistant",
-        content: data.response
-    });
+        conversation.push({
+            role: "user",
+            content: startMessage
+        });
+
+        conversation.push({
+            role: "assistant",
+            content: data.response
+        });
+
+    } catch (error) {
+
+        addMessage(
+            "Unable to connect to the server. Please try again.",
+            "bot"
+        );
+
+    }
 }
 
 
@@ -510,24 +529,25 @@ function handleEnter(event) {
 
 
 # ============================================================
-# HOME ROUTE
+# HOME PAGE
 # ============================================================
 
-@app.route("/")
-def home():
-    return render_template_string(HTML)
+@app.get("/", response_class=HTMLResponse)
+async def home():
+
+    return HTML
 
 
 # ============================================================
-# CHAT ROUTE
+# CHAT ENDPOINT
 # ============================================================
 
-@app.route("/chat", methods=["POST"])
-def chat():
+@app.post("/chat")
+async def chat(request: Request):
 
     try:
 
-        data = request.get_json()
+        data = await request.json()
 
         message = data.get("message", "").strip()
 
@@ -535,7 +555,7 @@ def chat():
 
         if not message:
 
-            return jsonify({
+            return JSONResponse({
                 "response": "Please enter a message."
             })
 
@@ -562,7 +582,21 @@ def chat():
 
         response_text = final_message.content
 
-        return jsonify({
+        if not isinstance(response_text, str):
+
+            if isinstance(response_text, list):
+
+                response_text = " ".join(
+                    str(item)
+                    for item in response_text
+                )
+
+            else:
+
+                response_text = str(response_text)
+
+
+        return JSONResponse({
             "response": response_text
         })
 
@@ -571,22 +605,10 @@ def chat():
 
         print("ERROR:", str(e))
 
-        return jsonify({
-            "response":
+        return JSONResponse(
+            {
+                "response":
                 "Something went wrong. Please try again."
-        }), 500
-
-
-# ============================================================
-# START SERVER
-# ============================================================
-
-if __name__ == "__main__":
-
-    port = int(os.environ.get("PORT", 5000))
-
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False
-    )
+            },
+            status_code=500
+        )
