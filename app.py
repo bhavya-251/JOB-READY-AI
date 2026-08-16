@@ -20,8 +20,7 @@ app = FastAPI()
 # ============================================================
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    temperature=0.4,
+    model="gemini-3.5-flash",
     max_tokens=2000,
     max_retries=2
 )
