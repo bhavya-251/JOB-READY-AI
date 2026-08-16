@@ -1,4 +1,4 @@
-Flask
-gunicorn
+fastapi
+uvicorn
 langchain
 langchain-google-genai
